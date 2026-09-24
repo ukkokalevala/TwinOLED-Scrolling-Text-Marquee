@@ -1,0 +1,59 @@
+#include <WiFi.h>
+#include <esp_now.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_W 128
+#define SCREEN_H 64
+
+Adafruit_SSD1306 display(SCREEN_W, SCREEN_H, &Wire, -1);
+
+typedef struct {
+  char text[48];
+  int  scrollX;
+  uint8_t magic;
+} ScrollPacket;
+
+ScrollPacket pkt;
+bool haveData = false;
+
+void onReceive(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+  if (len != sizeof(ScrollPacket)) return;
+  ScrollPacket *p = (ScrollPacket*)data;
+  if (p->magic != 0x42) return;
+  pkt = *p;
+  haveData = true;
+}
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(7, 6);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.clearDisplay();
+  display.display();
+
+  WiFi.mode(WIFI_STA);
+  esp_now_init();
+  esp_now_register_recv_cb(onReceive);
+}
+
+void loop() {
+  display.clearDisplay();
+
+  if (haveData) {
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextWrap(false);
+
+    // We are the RIGHT half of a 256-wide canvas.
+    // Local x = virtual x - 128.
+    // Text starts at virtual pkt.scrollX, so on our screen
+    // it appears at (pkt.scrollX - 128).
+    display.setCursor(pkt.scrollX - SCREEN_W, 16);
+    display.print(pkt.text);
+  }
+
+  display.display();
+  delay(20);
+}
